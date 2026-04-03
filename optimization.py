@@ -540,6 +540,21 @@ class ContainerLoadingOptimizer:
             # 计算空间利用率
             volume_ratio = used_volume / container_volume
             
+            # 计算从里往外填满奖励
+            fill_from_origin_reward = 0
+            if len(valid_cargoes) > 0:
+                # 计算所有货物的平均位置
+                avg_x = sum(pos['x'] for pos in solution) / len(solution)
+                avg_y = sum(pos['y'] for pos in solution) / len(solution)
+                avg_z = sum(pos['z'] for pos in solution) / len(solution)
+                
+                # 计算平均位置到原点的距离
+                avg_distance_to_origin = (avg_x ** 2 + avg_y ** 2 + avg_z ** 2) ** 0.5
+                max_avg_distance = (self.container_length ** 2 + self.container_width ** 2 + self.container_height ** 2) ** 0.5 / 3
+                
+                # 越靠近原点，奖励越高
+                fill_from_origin_reward = (1 - avg_distance_to_origin / max_avg_distance) * 50
+            
             # 计算货物之间的紧密程度奖励
             compactness_reward = 0
             if len(valid_cargoes) > 1:
@@ -611,6 +626,7 @@ class ContainerLoadingOptimizer:
             # 综合适应度
             fitness = volume_ratio * 1000  # 空间利用率权重最高
             fitness += compactness_reward * 20  # 增加紧密排列奖励权重
+            fitness += fill_from_origin_reward  # 从里往外填满奖励
             fitness -= overlap_penalty  # 重叠惩罚
             fitness -= rule_penalty  # 规则违反惩罚
             fitness -= stability_score * 0.01  # 稳定性评分（越低越好）
@@ -764,15 +780,10 @@ class ContainerLoadingOptimizer:
                         # 计算位置得分
                         score = 0
                         
-                        # 1. 空间利用率得分：越靠近中心得分越高
-                        center_x = self.container_length / 2
-                        center_y = self.container_width / 2
-                        center_z = self.container_height / 2
-                        distance_to_center = ((pos['x'] + length/2 - center_x) ** 2 +
-                                            (pos['y'] + width/2 - center_y) ** 2 +
-                                            (pos['z'] + height/2 - center_z) ** 2) ** 0.5
-                        max_distance = ((center_x) ** 2 + (center_y) ** 2 + (center_z) ** 2) ** 0.5
-                        space_score = 1 - (distance_to_center / max_distance)
+                        # 1. 从里往外填满得分：越靠近最里面（x=0, y=0, z=0）得分越高
+                        distance_to_origin = ((pos['x']) ** 2 + (pos['y']) ** 2 + (pos['z']) ** 2) ** 0.5
+                        max_distance_to_origin = (self.container_length ** 2 + self.container_width ** 2 + self.container_height ** 2) ** 0.5
+                        space_score = 1 - (distance_to_origin / max_distance_to_origin)
                         
                         # 2. 紧密程度得分：与其他货物的距离
                         compactness_score = 0
