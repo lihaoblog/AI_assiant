@@ -1,0 +1,7 @@
+pymysql
+pandas
+openpyxl
+xlrd
+langchain-core
+ortools
+numpy

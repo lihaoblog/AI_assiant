@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>装柜可视化系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+            overflow: hidden;
+        }
+        
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            width: 100vw;
+        }
+        
+        .header {
+            background-color: #2c3e50;
+            color: white;
+            padding: 10px 20px;
+            font-size: 16px;
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            flex-shrink: 0;
+        }
+        
+        .content {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+        
+        .left-panel {
+            width: 320px;
+            background-color: white;
+            border-right: 1px solid #ddd;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .panel-section {
+            padding: 12px 15px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .panel-section h3 {
+            font-size: 13px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #555;
+        }
+        
+        .info-item {
+            font-size: 11px;
+            margin-bottom: 4px;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .info-label {
+            color: #666;
+        }
+        
+        .info-value {
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .cargo-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px 15px;
+        }
+        
+        .cargo-item {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 8px;
+            margin-bottom: 8px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .cargo-item:hover {
+            background-color: #e9ecef;
+        }
+        
+        .cargo-item.selected {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+        }
+        
+        .cargo-item .item-name {
+            font-weight: bold;
+            margin-bottom: 4px;
+            font-size: 12px;
+        }
+        
+        .cargo-item .item-details {
+            color: #666;
+            line-height: 1.3;
+        }
+        
+        .right-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: #f0f0f0;
+            position: relative;
+        }
+        
+        .control-bar {
+            background-color: white;
+            padding: 8px 15px;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        
+        .control-bar button {
+            padding: 5px 10px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+        
+        .control-bar button:hover {
+            background-color: #2980b9;
+        }
+        
+        #container-3d {
+            flex: 1;
+            position: relative;
+        }
+        
+        #container-3d canvas {
+            display: block;
+        }
+        
+        .stats-panel {
+            position: absolute;
+            bottom: 15px;
+            right: 15px;
+            background-color: rgba(255, 255, 255, 0.95);
+            padding: 12px;
+            border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            font-size: 11px;
+            min-width: 180px;
+        }
+        
+        .stats-item {
+            margin-bottom: 6px;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background-color: #e9ecef;
+            border-radius: 3px;
+            margin-top: 2px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background-color: #27ae60;
+            border-radius: 3px;
+        }
+        
+        .footer {
+            background-color: white;
+            padding: 8px 15px;
+            border-top: 1px solid #ddd;
+            font-size: 11px;
+            color: #666;
+            text-align: right;
+            flex-shrink: 0;
+        }
+        
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">装柜可视化系统</div>
+        
+        <div class="content">
+            <!-- 左侧信息面板 -->
+            <div class="left-panel">
+                <div class="panel-section">
+                    <h3>集装箱信息</h3>
+                    <div class="info-item">
+                        <span class="info-label">尺寸:</span>
+                        <span class="info-value">11.63m × 2.63m × 2.67m</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">容积:</span>
+                        <span class="info-value">81.45 m³</span>
+                    </div>
+                </div>
+                
+                <div class="panel-section">
+                    <h3>装载统计</h3>
+                    <div class="info-item">
+                        <span class="info-label">已装载货物:</span>
+                        <span class="info-value" id="cargo-count">0 件</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">利用体积:</span>
+                        <span class="info-value" id="used-volume">0.00 m³</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">空间利用率:</span>
+                        <span class="info-value" id="utilization">0.00%</span>
+                    </div>
+                </div>
+                
+                <div class="cargo-list" id="cargo-list">
+                    <h3>货物列表</h3>
+                    <div class="loading-spinner" style="margin: 20px auto;"></div>
+                </div>
+            </div>
+            
+            <!-- 右侧3D可视化区域 -->
+            <div class="right-panel">
+                <div class="control-bar">
+                    <button id="btn-reset">重置视角</button>
+                    <button id="btn-wireframe">线框模式</button>
+                    <button id="btn-axes">显示坐标轴</button>
+                    <button id="btn-animate">开始动画</button>
+                    <button id="btn-load-data">加载优化数据</button>
+                    <button id="btn-load-default">恢复默认数据</button>
+                </div>
+                
+                <div id="container-3d"></div>
+                
+                <div class="stats-panel">
+                    <h3>装载状态</h3>
+                    <div class="stats-item">
+                        空间利用率: <span id="stats-utilization">0.00%</span>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progress-utilization" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div class="stats-item">
+                        重量: <span id="stats-weight">0.00kg</span>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progress-weight" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div class="stats-item">
+                        剩余空间: <span id="stats-remaining">81.45 m³</span>
+                    </div>
+                    <div class="stats-item">
+                        已装载货物: <span id="stats-cargoes">0件</span>
+                    </div>
+                </div>
+                
+                <div class="footer">
+                    版本: 1.0.0 | 装柜规则: 11条 | 优化算法: Google OR-Tools + 遗传算法
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+    
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        
+        // 全局变量
+        let scene, camera, renderer, controls;
+        let cargoMeshes = [];
+        let axesHelper;
+        let axesVisible = true;
+        let wireframeMode = false;
+        let cargoData = [];
+        let selectedCargo = null;
+        
+        // 集装箱尺寸 (11.63m, 2.63m, 2.67m) - 使用更大比例便于显示
+        const scale = 2; // 放大倍数
+        const containerSize = { length: 1163 * scale, width: 263 * scale, height: 267 * scale };
+        const containerVolume = (1163 * 263 * 267) / 1000000; // 立方米（原始尺寸计算）
+        
+        // 货物类型和颜色映射 - 增加区分度
+        const cargoTypeColors = {
+            '软水阀': 0xff0000, // 鲜红色
+            '压力容器': 0x0000ff, // 纯蓝色
+            '射流器': 0x00ff00, // 纯绿色
+            '托盘': 0xffff00, // 黄色
+            '软水机': 0xff00ff, // 品红色
+            '阀门': 0x00ffff, // 青色
+            '泵': 0xff8000, // 橙色
+            '水箱': 0x808080, // 灰色
+            '配件': 0x800080, // 紫色
+            '其他': 0xc0c0c0  // 银色
+        };
+        
+        // 货物类型和图像映射
+        const cargoTypeImages = {
+            '软水阀': 'https://placehold.co/40x40/3498db/ffffff?text=阀',
+            '压力容器': 'https://placehold.co/40x40/e74c3c/ffffff?text=罐',
+            '射流器': 'https://placehold.co/40x40/27ae60/ffffff?text=泵',
+            '托盘': 'https://placehold.co/40x40/f39c12/ffffff?text=盘',
+            '软水机': 'https://placehold.co/40x40/9b59b6/ffffff?text=机',
+            '阀门': 'https://placehold.co/40x40/e67e22/ffffff?text=阀',
+            '泵': 'https://placehold.co/40x40/1abc9c/ffffff?text=泵',
+            '水箱': 'https://placehold.co/40x40/95a5a6/ffffff?text=箱',
+            '配件': 'https://placehold.co/40x40/34495e/ffffff?text=件',
+            '其他': 'https://placehold.co/40x40/9b59b6/ffffff?text=物'
+        };
+        
+        // 获取货物类型
+        function getCargoType(name) {
+            if (name.includes('软水阀')) return '软水阀';
+            if (name.includes('压力容器')) return '压力容器';
+            if (name.includes('射流器')) return '射流器';
+            if (name.includes('托盘')) return '托盘';
+            if (name.includes('软水机')) return '软水机';
+            if (name.includes('阀门')) return '阀门';
+            if (name.includes('泵')) return '泵';
+            if (name.includes('水箱')) return '水箱';
+            if (name.includes('配件')) return '配件';
+            return '其他';
+        }
+        
+        // 初始化Three.js场景
+        function initScene() {
+            // 场景
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xf0f4f8);
+            
+            // 相机
+            const container = document.getElementById('container-3d');
+            camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 10000);
+            camera.position.set(3500, 2000, 3500);
+            
+            // 渲染器
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            container.appendChild(renderer.domElement);
+            
+            // 轨道控制器
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            
+            // 坐标轴
+            axesHelper = new THREE.AxesHelper(600);
+            scene.add(axesHelper);
+            
+            // 灯光
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+            
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+            dirLight.position.set(1000, 1500, 1000);
+            scene.add(dirLight);
+            
+            // 创建集装箱
+            createContainer();
+            
+            // 加载默认货物数据
+            loadDefaultCargoData();
+            
+            // 动画循环
+            animate();
+        }
+        
+        // 创建集装箱
+        function createContainer() {
+            // 集装箱线框
+            const containerGeo = new THREE.BoxGeometry(containerSize.length, containerSize.height, containerSize.width);
+            const edges = new THREE.EdgesGeometry(containerGeo);
+            const lineMat = new THREE.LineBasicMaterial({ color: 0x2266cc, linewidth: 2 });
+            const container = new THREE.LineSegments(edges, lineMat);
+            container.position.set(containerSize.length / 2, containerSize.height / 2, containerSize.width / 2);
+            scene.add(container);
+        }
+        
+        // 创建货物方块
+        function createCargo(x, y, z, l, h, w, color, cargoIndex) {
+            const geo = new THREE.BoxGeometry(l, h, w);
+            const mat = new THREE.MeshLambertMaterial({
+                color: color,
+                transparent: true,
+                opacity: 0.85
+            });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(x, y, z);
+            mesh.userData = { cargoIndex: cargoIndex };
+            scene.add(mesh);
+            
+            // 添加边框
+            const edges = new THREE.EdgesGeometry(geo);
+            const lineMat = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 1 });
+            const wireframe = new THREE.LineSegments(edges, lineMat);
+            wireframe.position.set(x, y, z);
+            scene.add(wireframe);
+            
+            // 保存网格和边框
+            cargoMeshes.push({ mesh: mesh, wireframe: wireframe });
+            
+            return mesh;
+        }
+        
+        // 加载默认货物数据
+        function loadDefaultCargoData() {
+            // 模拟从优化模块获取的数据
+            cargoData = [
+                { id: 1, name: "软水阀_BNT5650(F)", length: 320, width: 235, height: 290, weight: 3.75, position: { x: 100, y: 145, z: 100 } },
+                { id: 2, name: "软水阀_BNT7650(F)", length: 320, width: 235, height: 290, weight: 3.75, position: { x: 450, y: 145, z: 100 } },
+                { id: 3, name: "复合材料压力容器_1354", length: 1354, width: 235, height: 2500, weight: 50, position: { x: 100, y: 1250, z: 100 } },
+                { id: 4, name: "复合材料压力容器_1465", length: 1700, width: 376, height: 386, weight: 16.32, position: { x: 1500, y: 193, z: 100 } },
+                { id: 5, name: "复合材料压力容器_1252", length: 1252, width: 235, height: 2500, weight: 50, position: { x: 3300, y: 1250, z: 100 } },
+                { id: 6, name: "射流器套件", length: 500, width: 400, height: 300, weight: 10, position: { x: 100, y: 150, z: 500 } },
+                { id: 7, name: "托盘_1", length: 1200, width: 1000, height: 163, weight: 56.43, position: { x: 4600, y: 81.5, z: 100 } }
+            ];
+            
+            // 放置货物
+            placeCargoes();
+            
+            // 更新货物列表
+            updateCargoList();
+        }
+        
+        // 从优化模块加载数据
+        function loadOptimizedData() {
+            console.log('加载优化数据...');
+            
+            // 从JSON文件中获取真实的优化结果
+            fetch('optimized_result.json')
+                .then(response => {
+                    console.log('响应状态:', response.status);
+                    if (!response.ok) {
+                        throw new Error('网络响应错误');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('获取到优化数据:', data);
+                    console.log('数据长度:', data.length);
+                    cargoData = data;
+                    console.log('cargoData更新后长度:', cargoData.length);
+                    placeCargoes();
+                    updateCargoList();
+                    console.log('优化数据加载完成');
+                })
+                .catch(error => {
+                    console.error('加载优化数据失败:', error);
+                    // 如果加载失败，使用默认数据
+                    const defaultData = [
+                        { id: 1, name: "软水阀_BNT5650(F)", length: 320, width: 235, height: 290, weight: 3.75, position: { x: 100, y: 145, z: 100 } },
+                        { id: 2, name: "软水阀_BNT7650(F)", length: 320, width: 235, height: 290, weight: 3.75, position: { x: 450, y: 145, z: 100 } },
+                        { id: 3, name: "复合材料压力容器_1354", length: 1354, width: 235, height: 2500, weight: 50, position: { x: 100, y: 1250, z: 100 } },
+                        { id: 4, name: "复合材料压力容器_1465", length: 1700, width: 376, height: 386, weight: 16.32, position: { x: 1500, y: 193, z: 100 } },
+                        { id: 5, name: "复合材料压力容器_1252", length: 1252, width: 235, height: 2500, weight: 50, position: { x: 3300, y: 1250, z: 100 } },
+                        { id: 6, name: "射流器套件", length: 500, width: 400, height: 300, weight: 10, position: { x: 100, y: 150, z: 500 } },
+                        { id: 7, name: "托盘_1", length: 1200, width: 1000, height: 163, weight: 56.43, position: { x: 4600, y: 81.5, z: 100 } }
+                    ];
+                    cargoData = defaultData;
+                    placeCargoes();
+                    updateCargoList();
+                    console.log('使用默认数据加载完成');
+                });
+        }
+        
+        // 放置货物
+        function placeCargoes() {
+            console.log('开始放置货物，数据长度:', cargoData.length);
+            // 清空现有货物
+            cargoMeshes.forEach(item => {
+                scene.remove(item.mesh);
+                scene.remove(item.wireframe);
+            });
+            cargoMeshes = [];
+            
+            let totalVolume = 0;
+            let totalWeight = 0;
+            
+            cargoData.forEach((cargo, index) => {
+                console.log('处理货物:', index, cargo.name);
+                // 获取货物类型颜色
+                const type = getCargoType(cargo.name);
+                const color = cargoTypeColors[type] || 0x9b59b6;
+                
+                // 计算货物尺寸（毫米转厘米并放大）
+                const length = (cargo.length / 10) * scale; // 转换为厘米，然后放大
+                const width = (cargo.width / 10) * scale;
+                const height = (cargo.height / 10) * scale;
+                
+                // 计算货物中心位置（确保在集装箱范围内）
+                const maxX = containerSize.length - length;
+                const maxY = containerSize.height - height;
+                const maxZ = containerSize.width - width;
+                
+                // 转换位置单位并确保在范围内 (毫米转厘米)
+                const posX = Math.max(0, Math.min(maxX, (cargo.position.x / 10) * scale));
+                // 确保货物接地 - 底部y坐标为0
+                const posY = 0;
+                const posZ = Math.max(0, Math.min(maxZ, (cargo.position.z / 10) * scale));
+                
+                const centerX = posX + length / 2;
+                const centerY = posY + height / 2;
+                const centerZ = posZ + width / 2;
+                
+                // 创建货物
+                createCargo(centerX, centerY, centerZ, length, height, width, color, index);
+                
+                // 更新统计
+                totalVolume += (cargo.length * cargo.width * cargo.height) / 1000000000; // 转换为立方米（mm³ -> m³）
+                totalWeight += cargo.weight;
+            });
+            
+            // 更新统计面板
+            const utilization = Math.min(100, (totalVolume / containerVolume) * 100);
+            console.log('放置完成，装载货物:', cargoData.length, '件，空间利用率:', utilization.toFixed(2) + '%');
+            document.getElementById('cargo-count').textContent = `${cargoData.length} 件`;
+            document.getElementById('used-volume').textContent = `${totalVolume.toFixed(2)} m³`;
+            document.getElementById('utilization').textContent = `${utilization.toFixed(2)}%`;
+            
+            document.getElementById('stats-utilization').textContent = `${utilization.toFixed(2)}%`;
+            document.getElementById('stats-weight').textContent = `${totalWeight.toFixed(2)}kg`;
+            document.getElementById('stats-remaining').textContent = `${Math.max(0, containerVolume - totalVolume).toFixed(2)} m³`;
+            document.getElementById('stats-cargoes').textContent = `${cargoData.length}件`;
+            
+            // 更新进度条
+            document.getElementById('progress-utilization').style.width = `${utilization}%`;
+            document.getElementById('progress-weight').style.width = `${Math.min(100, (totalWeight / 3000) * 100)}%`;
+        }
+        
+        // 更新货物列表
+        function updateCargoList() {
+            console.log('开始更新货物列表');
+            const cargoList = document.getElementById('cargo-list');
+            cargoList.innerHTML = '<h3>货物列表</h3>';
+            
+            // 合并同名物料
+            const cargoMap = new Map();
+            cargoData.forEach((cargo, index) => {
+                if (cargoMap.has(cargo.name)) {
+                    // 如果物料已存在，增加数量
+                    const existing = cargoMap.get(cargo.name);
+                    existing.count += 1;
+                    existing.indices.push(index);
+                } else {
+                    // 如果物料不存在，创建新条目
+                    cargoMap.set(cargo.name, {
+                        cargo: cargo,
+                        count: 1,
+                        indices: [index]
+                    });
+                }
+            });
+            
+            console.log('合并后物料数量:', cargoMap.size);
+            
+            // 遍历合并后的物料
+            cargoMap.forEach((item, name) => {
+                console.log('处理物料:', name, '数量:', item.count);
+                const cargo = item.cargo;
+                const count = item.count;
+                const indices = item.indices;
+                
+                const cargoItem = document.createElement('div');
+                cargoItem.className = 'cargo-item';
+                
+                // 获取货物类型和对应的图像
+                const type = getCargoType(cargo.name);
+                const imageUrl = cargoTypeImages[type] || cargoTypeImages['其他'];
+                
+                // 创建简单的颜色块预览，而不是3D预览，以提高性能
+                const color = cargoTypeColors[type] || 0x9b59b6;
+                const colorHex = '#' + color.toString(16).padStart(6, '0');
+                
+                cargoItem.innerHTML = '<div style="display: flex; align-items: center; gap: 10px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 8px; background-color: white;">' +
+                    '<div style="width: 40px; height: 40px; border-radius: 4px; overflow: hidden; background-color: ' + colorHex + '; position: relative; border: 1px solid #ccc; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; color: white; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);">' +
+                    type.charAt(0) +
+                    '</div>' +
+                    '<div style="flex: 1;">' +
+                    '<div class="item-name">' + cargo.name + ' <span style="font-size: 10px; color: #666; background-color: #f0f0f0; padding: 2px 6px; border-radius: 10px;">x' + count + '</span></div>' +
+                    '<div class="item-details">' +
+                    '尺寸: ' + (cargo.length/1000).toFixed(3) + 'm × ' + (cargo.width/1000).toFixed(3) + 'm × ' + (cargo.height/1000).toFixed(3) + 'm<br>' +
+                    '重量: ' + cargo.weight.toFixed(2) + 'kg × ' + count + ' = ' + (cargo.weight * count).toFixed(2) + 'kg<br>' +
+                    '总占位: ' + ((cargo.length * cargo.width * cargo.height / 1000000000) * count).toFixed(3) + ' m³<br>' +
+                    '位置: 多个位置 (点击查看第一个位置)' +
+                    '</div>' +
+                    '</div>' +
+                    '</div>';
+                
+                cargoList.appendChild(cargoItem);
+                
+                cargoItem.addEventListener('click', function() {
+                    // 选择第一个该类型的货物
+                    selectCargo(indices[0]);
+                });
+            });
+            
+            console.log('货物列表更新完成');
+        }
+        
+        // 选择货物
+        function selectCargo(index) {
+            // 取消之前的选择
+            if (selectedCargo !== null) {
+                const cargoItems = document.querySelectorAll('.cargo-item');
+                if (cargoItems[selectedCargo]) {
+                    cargoItems[selectedCargo].classList.remove('selected');
+                }
+            }
+            
+            // 选择新货物
+            selectedCargo = index;
+            const cargoItems = document.querySelectorAll('.cargo-item');
+            if (cargoItems[index]) {
+                cargoItems[index].classList.add('selected');
+            }
+            
+            // 聚焦到选中的货物
+            const cargo = cargoData[index];
+            const cargoItem = cargoMeshes[index];
+            
+            if (cargoItem && cargoItem.mesh) {
+                // 计算货物中心位置
+                const centerX = cargo.position.x * scale / 10 + (cargo.length * scale / 10) / 2;
+                const centerY = cargo.position.y * scale / 10 + (cargo.height * scale / 10) / 2;
+                const centerZ = cargo.position.z * scale / 10 + (cargo.width * scale / 10) / 2;
+                
+                // 移动相机到货物位置
+                camera.position.set(centerX + 1000, centerY + 1000, centerZ + 1000);
+                controls.target.set(centerX, centerY, centerZ);
+            }
+        }
+        
+        // 窗口大小调整
+        window.addEventListener('resize', function() {
+            if (camera && renderer) {
+                const container = document.getElementById('container-3d');
+                camera.aspect = container.clientWidth / container.clientHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(container.clientWidth, container.clientHeight);
+            }
+        });
+        
+        // 动画循环
+        function animate() {
+            requestAnimationFrame(animate);
+            if (controls) controls.update();
+            if (renderer && scene && camera) renderer.render(scene, camera);
+        }
+        
+        // 控制函数
+        document.getElementById('btn-reset').addEventListener('click', function() {
+            if (camera) {
+                camera.position.set(3500, 2000, 3500);
+                if (controls) controls.reset();
+            }
+        });
+        
+        document.getElementById('btn-wireframe').addEventListener('click', function() {
+            wireframeMode = !wireframeMode;
+            cargoMeshes.forEach(mesh => {
+                mesh.material.wireframe = wireframeMode;
+            });
+        });
+        
+        document.getElementById('btn-axes').addEventListener('click', function() {
+            if (axesHelper) {
+                axesVisible = !axesVisible;
+                axesHelper.visible = axesVisible;
+            }
+        });
+        
+        document.getElementById('btn-animate').addEventListener('click', function() {
+            console.log('开始装载动画');
+            // 这里可以添加装载动画逻辑
+        });
+        
+        document.getElementById('btn-load-data').addEventListener('click', function() {
+            loadOptimizedData();
+        });
+        
+        document.getElementById('btn-load-default').addEventListener('click', function() {
+            loadDefaultCargoData();
+        });
+        
+        // 创建货物3D预览
+        function createCargoPreview(containerId, cargo, type) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            
+            // 场景
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xf0f0f0);
+            
+            // 相机
+            const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+            camera.position.set(10, 10, 10);
+            camera.lookAt(0, 0, 0);
+            
+            // 渲染器
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            container.appendChild(renderer.domElement);
+            
+            // 灯光
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+            
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+            dirLight.position.set(5, 5, 5);
+            scene.add(dirLight);
+            
+            // 货物尺寸
+            const length = cargo.length / 1000 * 5; // 缩放便于显示
+            const width = cargo.width / 1000 * 5;
+            const height = cargo.height / 1000 * 5;
+            
+            // 货物颜色
+            const color = cargoTypeColors[type] || 0x9b59b6;
+            
+            // 创建货物
+            const geo = new THREE.BoxGeometry(length, height, width);
+            const mat = new THREE.MeshLambertMaterial({ color: color });
+            const mesh = new THREE.Mesh(geo, mat);
+            scene.add(mesh);
+            
+            // 添加边框
+            const edges = new THREE.EdgesGeometry(geo);
+            const lineMat = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 1 });
+            const wireframe = new THREE.LineSegments(edges, lineMat);
+            scene.add(wireframe);
+            
+            // 动画
+            function animate() {
+                requestAnimationFrame(animate);
+                mesh.rotation.y += 0.01;
+                wireframe.rotation.y += 0.01;
+                renderer.render(scene, camera);
+            }
+            
+            animate();
+            
+            // 清理函数
+            container.addEventListener('remove', () => {
+                renderer.dispose();
+                geo.dispose();
+                mat.dispose();
+                edges.dispose();
+                lineMat.dispose();
+            });
+        }
+        
+        // 初始化
+        initScene();
+    </script>
+</body>
+</html>
