@@ -540,22 +540,7 @@ class ContainerLoadingOptimizer:
             # 计算空间利用率
             volume_ratio = used_volume / container_volume
             
-            # 计算从里往外填满奖励
-            fill_from_origin_reward = 0
-            if len(valid_cargoes) > 0:
-                # 计算所有货物的平均位置
-                avg_x = sum(pos['x'] for pos in solution) / len(solution)
-                avg_y = sum(pos['y'] for pos in solution) / len(solution)
-                avg_z = sum(pos['z'] for pos in solution) / len(solution)
-                
-                # 计算平均位置到原点的距离
-                avg_distance_to_origin = (avg_x ** 2 + avg_y ** 2 + avg_z ** 2) ** 0.5
-                max_avg_distance = (self.container_length ** 2 + self.container_width ** 2 + self.container_height ** 2) ** 0.5 / 3
-                
-                # 越靠近原点，奖励越高
-                fill_from_origin_reward = (1 - avg_distance_to_origin / max_avg_distance) * 50
-            
-            # 计算货物之间的紧密程度奖励
+            # 计算货物之间的紧密程度奖励（确保货物贴在一起，没有空隙）
             compactness_reward = 0
             if len(valid_cargoes) > 1:
                 for i in range(len(valid_cargoes)):
@@ -565,26 +550,29 @@ class ContainerLoadingOptimizer:
                     h1 = info1['height']
                     pos1 = solution[i]
                     
-                    for j in range(i + 1, len(valid_cargoes)):
-                        info2 = cargo_info[j]
-                        l2 = info2['length']
-                        w2 = info2['width']
-                        h2 = info2['height']
-                        pos2 = solution[j]
-                        
-                        # 计算货物之间的距离
-                        dx = max(0, pos1['x'] + l1 - pos2['x'], pos2['x'] + l2 - pos1['x'])
-                        dy = max(0, pos1['y'] + w1 - pos2['y'], pos2['y'] + w2 - pos1['y'])
-                        dz = max(0, pos1['z'] + h1 - pos2['z'], pos2['z'] + h2 - pos1['z'])
-                        
-                        # 距离越小，奖励越高
-                        distance = dx + dy + dz
-                        if distance < 0.2:  # 距离小于0.2米
-                            compactness_reward += (0.2 - distance) * 15  # 增加奖励权重
-                        elif distance < 0.4:
-                            compactness_reward += (0.4 - distance) * 8
-                        elif distance < 0.6:
-                            compactness_reward += (0.6 - distance) * 4
+                    for j in range(len(valid_cargoes)):
+                        if i != j:
+                            info2 = cargo_info[j]
+                            l2 = info2['length']
+                            w2 = info2['width']
+                            h2 = info2['height']
+                            pos2 = solution[j]
+                            
+                            # 计算货物之间的距离（确保贴在一起）
+                            dx = max(0, pos1['x'] + l1 - pos2['x'], pos2['x'] + l2 - pos1['x'])
+                            dy = max(0, pos1['y'] + w1 - pos2['y'], pos2['y'] + w2 - pos1['y'])
+                            dz = max(0, pos1['z'] + h1 - pos2['z'], pos2['z'] + h2 - pos1['z'])
+                            
+                            # 距离越小，奖励越高，鼓励货物贴在一起
+                            distance = dx + dy + dz
+                            if distance < 0.01:  # 几乎贴在一起
+                                compactness_reward += 50  # 最高奖励
+                            elif distance < 0.05:  # 非常接近
+                                compactness_reward += (0.05 - distance) * 1000
+                            elif distance < 0.1:  # 接近
+                                compactness_reward += (0.1 - distance) * 500
+                            elif distance < 0.2:  # 较接近
+                                compactness_reward += (0.2 - distance) * 100
             
             # 计算重心平衡惩罚
             if total_weight > 0:
@@ -626,7 +614,6 @@ class ContainerLoadingOptimizer:
             # 综合适应度
             fitness = volume_ratio * 1000  # 空间利用率权重最高
             fitness += compactness_reward * 20  # 增加紧密排列奖励权重
-            fitness += fill_from_origin_reward  # 从里往外填满奖励
             fitness -= overlap_penalty  # 重叠惩罚
             fitness -= rule_penalty  # 规则违反惩罚
             fitness -= stability_score * 0.01  # 稳定性评分（越低越好）
@@ -636,9 +623,9 @@ class ContainerLoadingOptimizer:
             
             return fitness
         
-        # 智能初始化策略 - 更高效的紧密排列
+        # 智能初始化策略 - 从起点靠墙开始摆放，先满足宽，再满足高，最后满足长度
         def initialize_solution():
-            """智能初始化解决方案 - 更高效的紧密排列"""
+            """智能初始化解决方案 - 从起点靠墙开始摆放，先满足宽，再满足高，最后满足长度"""
             solution = []
             
             # 更智能的货物排序策略：按体积和形状因子排序
@@ -661,7 +648,10 @@ class ContainerLoadingOptimizer:
             # 记录已放置的货物位置
             placed_positions = []
             
-            for cargo in sorted_cargoes:
+            # 从起点（x=0, y=0, z=0）开始摆放
+            # 按照先宽后高再长度的顺序
+            
+            for i, cargo in enumerate(sorted_cargoes):
                 try:
                     length = float(cargo.get('length', 0.1))
                     width = float(cargo.get('width', 0.1))
@@ -671,206 +661,153 @@ class ContainerLoadingOptimizer:
                     width = 0.1
                     height = 0.1
                 
-                # 尝试找到合适的位置 - 更智能的紧密排列策略
-                max_attempts = 200  # 增加尝试次数
+                # 尝试找到合适的位置 - 从起点靠墙开始，先满足宽，再满足高，最后满足长度
                 best_position = None
-                best_score = -float('inf')
                 
-                # 生成候选位置
-                candidate_positions = []
-                
-                # 1. 底层货物优先放在底部
-                if cargo.get('bottom_only', False):
-                    # 网格搜索策略
-                    grid_size = 0.1  # 网格大小
-                    x_steps = int(self.container_length / grid_size)
-                    y_steps = int(self.container_width / grid_size)
+                # 检查当前位置是否可以放置
+                def check_position(x, y, z):
+                    # 检查是否在集装箱内
+                    if (x + length > self.container_length or
+                        y + width > self.container_width or
+                        z + height > self.container_height):
+                        return False
                     
-                    for i in range(x_steps):
-                        for j in range(y_steps):
-                            x = i * grid_size
-                            y = j * grid_size
-                            z = 0
-                            
-                            # 检查是否在集装箱内
-                            if x + length <= self.container_length and y + width <= self.container_width:
-                                candidate_positions.append({'x': x, 'y': y, 'z': z})
-                
-                # 2. 顶层货物优先放在顶部
-                elif cargo.get('top_placement', '否') == '是':
-                    # 网格搜索策略
-                    grid_size = 0.1
-                    x_steps = int(self.container_length / grid_size)
-                    y_steps = int(self.container_width / grid_size)
-                    
-                    for i in range(x_steps):
-                        for j in range(y_steps):
-                            x = i * grid_size
-                            y = j * grid_size
-                            z = self.container_height - height
-                            
-                            if x + length <= self.container_length and y + width <= self.container_width:
-                                candidate_positions.append({'x': x, 'y': y, 'z': z})
-                
-                # 3. 普通货物尝试在已放置货物周围紧密排列
-                else:
-                    # 生成基于已放置货物的候选位置
-                    if placed_positions:
-                        for placed_cargo, placed_pos in placed_positions:
-                            try:
-                                pl = float(placed_cargo.get('length', 0.1))
-                                pw = float(placed_cargo.get('width', 0.1))
-                                ph = float(placed_cargo.get('height', 0.1))
-                                
-                                # 生成多个候选位置：右侧、后侧、上方、左侧、前侧、下方
-                                possible_positions = [
-                                    # 右侧
-                                    {'x': placed_pos['x'] + pl, 'y': placed_pos['y'], 'z': placed_pos['z']},
-                                    # 后侧
-                                    {'x': placed_pos['x'], 'y': placed_pos['y'] + pw, 'z': placed_pos['z']},
-                                    # 上方
-                                    {'x': placed_pos['x'], 'y': placed_pos['y'], 'z': placed_pos['z'] + ph},
-                                    # 左侧
-                                    {'x': placed_pos['x'] - length, 'y': placed_pos['y'], 'z': placed_pos['z']},
-                                    # 前侧
-                                    {'x': placed_pos['x'], 'y': placed_pos['y'] - width, 'z': placed_pos['z']},
-                                    # 下方
-                                    {'x': placed_pos['x'], 'y': placed_pos['y'], 'z': placed_pos['z'] - height}
-                                ]
-                                
-                                for pos in possible_positions:
-                                    # 检查是否在集装箱内
-                                    if (pos['x'] >= 0 and pos['x'] + length <= self.container_length and
-                                        pos['y'] >= 0 and pos['y'] + width <= self.container_width and
-                                        pos['z'] >= 0 and pos['z'] + height <= self.container_height):
-                                        candidate_positions.append(pos)
-                            except (ValueError, TypeError):
-                                continue
-                    
-                    # 如果没有已放置的货物，放在角落
-                    if not candidate_positions:
-                        candidate_positions.append({'x': 0, 'y': 0, 'z': 0})
-                
-                # 4. 随机生成一些额外的候选位置
-                for _ in range(50):
-                    x = np.random.uniform(0, max(0.1, self.container_length - length))
-                    y = np.random.uniform(0, max(0.1, self.container_width - width))
-                    z = np.random.uniform(0, max(0.1, self.container_height - height))
-                    candidate_positions.append({'x': x, 'y': y, 'z': z})
-                
-                # 评估候选位置
-                for pos in candidate_positions:
                     # 检查是否与已放置货物重叠
-                    overlap = False
                     for placed_cargo, placed_pos in placed_positions:
                         try:
                             pl = float(placed_cargo.get('length', 0.1))
                             pw = float(placed_cargo.get('width', 0.1))
                             ph = float(placed_cargo.get('height', 0.1))
                             
-                            if not (pos['x'] + length <= placed_pos['x'] or placed_pos['x'] + pl <= pos['x'] or
-                                    pos['y'] + width <= placed_pos['y'] or placed_pos['y'] + pw <= pos['y'] or
-                                    pos['z'] + height <= placed_pos['z'] or placed_pos['z'] + ph <= pos['z']):
-                                overlap = True
+                            if not (x + length <= placed_pos['x'] or placed_pos['x'] + pl <= x or
+                                    y + width <= placed_pos['y'] or placed_pos['y'] + pw <= y or
+                                    z + height <= placed_pos['z'] or placed_pos['z'] + ph <= z):
+                                return False
+                        except (ValueError, TypeError):
+                            continue
+                    return True
+                
+                # 1. 第一个货物必须放在起点（x=0, y=0, z=0）
+                if i == 0:
+                    # 强制放在起点位置
+                    best_position = {'x': 0, 'y': 0, 'z': 0}
+                    # 确保起点位置有效
+                    try:
+                        length = float(cargo.get('length', 0.1))
+                        width = float(cargo.get('width', 0.1))
+                        height = float(cargo.get('height', 0.1))
+                        # 检查是否在集装箱内
+                        if (length > self.container_length or
+                            width > self.container_width or
+                            height > self.container_height):
+                            # 如果货物太大，使用网格搜索
+                            found = False
+                            for y in range(int(self.container_width / 0.1) + 1):
+                                y_pos = y * 0.1
+                                for z in range(int(self.container_height / 0.1) + 1):
+                                    z_pos = z * 0.1
+                                    for x in range(int(self.container_length / 0.1) + 1):
+                                        x_pos = x * 0.1
+                                        if check_position(x_pos, y_pos, z_pos):
+                                            best_position = {'x': x_pos, 'y': y_pos, 'z': z_pos}
+                                            found = True
+                                            break
+                                    if found:
+                                        break
+                                if found:
+                                    break
+                    except (ValueError, TypeError):
+                        pass
+                else:
+                    # 2. 后续货物按照先宽后高再长度的顺序排列
+                    # 遍历所有已放置的货物，尝试在其旁边放置
+                    found = False
+                    # 按先宽后高再长度的顺序尝试
+                    # 先尝试宽度方向（y轴）
+                    for placed_cargo, placed_pos in placed_positions:
+                        try:
+                            pl = float(placed_cargo.get('length', 0.1))
+                            pw = float(placed_cargo.get('width', 0.1))
+                            ph = float(placed_cargo.get('height', 0.1))
+                            
+                            # 尝试在宽度方向（右侧）放置
+                            x = placed_pos['x']
+                            y = placed_pos['y'] + pw
+                            z = placed_pos['z']
+                            if check_position(x, y, z):
+                                best_position = {'x': x, 'y': y, 'z': z}
+                                found = True
                                 break
                         except (ValueError, TypeError):
                             continue
                     
-                    if not overlap:
-                        # 计算位置得分
-                        score = 0
-                        
-                        # 1. 从里往外填满得分：越靠近最里面（x=0, y=0, z=0）得分越高
-                        distance_to_origin = ((pos['x']) ** 2 + (pos['y']) ** 2 + (pos['z']) ** 2) ** 0.5
-                        max_distance_to_origin = (self.container_length ** 2 + self.container_width ** 2 + self.container_height ** 2) ** 0.5
-                        space_score = 1 - (distance_to_origin / max_distance_to_origin)
-                        
-                        # 2. 紧密程度得分：与其他货物的距离
-                        compactness_score = 0
+                    # 如果宽度方向没有位置，尝试高度方向（z轴）
+                    if not found:
                         for placed_cargo, placed_pos in placed_positions:
                             try:
                                 pl = float(placed_cargo.get('length', 0.1))
                                 pw = float(placed_cargo.get('width', 0.1))
                                 ph = float(placed_cargo.get('height', 0.1))
                                 
-                                # 计算距离
-                                dx = max(0, placed_pos['x'] + pl - pos['x'], pos['x'] + length - placed_pos['x'])
-                                dy = max(0, placed_pos['y'] + pw - pos['y'], pos['y'] + width - placed_pos['y'])
-                                dz = max(0, placed_pos['z'] + ph - pos['z'], pos['z'] + height - placed_pos['z'])
-                                dist = dx + dy + dz
-                                
-                                if dist < 0.5:
-                                    compactness_score += (0.5 - dist) * 2
+                                # 尝试在高度方向（上方）放置
+                                x = placed_pos['x']
+                                y = placed_pos['y']
+                                z = placed_pos['z'] + ph
+                                if check_position(x, y, z):
+                                    best_position = {'x': x, 'y': y, 'z': z}
+                                    found = True
+                                    break
                             except (ValueError, TypeError):
                                 continue
-                        
-                        # 3. 规则遵守得分
-                        rule_score = 0
-                        # 底层货物
-                        if cargo.get('bottom_only', False) and pos['z'] < 0.1:
-                            rule_score += 1
-                        # 顶层货物
-                        if cargo.get('top_placement', '否') == '是' and pos['z'] + height > self.container_height - 0.1:
-                            rule_score += 1
-                        
-                        # 综合得分
-                        score = space_score * 0.4 + compactness_score * 0.4 + rule_score * 0.2
-                        
-                        if score > best_score:
-                            best_score = score
-                            best_position = pos
-                
-                if best_position:
-                    solution.append(best_position)
-                    placed_positions.append((cargo, best_position))
-                else:
-                    # 如果找不到合适位置，使用网格搜索放置
-                    grid_size = 0.2
-                    placed = False
-                    for i in range(int(self.container_length / grid_size)):
-                        for j in range(int(self.container_width / grid_size)):
-                            for k in range(int(self.container_height / grid_size)):
-                                x = i * grid_size
-                                y = j * grid_size
-                                z = k * grid_size
-                                
-                                if (x + length <= self.container_length and
-                                    y + width <= self.container_width and
-                                    z + height <= self.container_height):
-                                    # 检查是否重叠
-                                    overlap = False
-                                    for placed_cargo, placed_pos in placed_positions:
-                                        try:
-                                            pl = float(placed_cargo.get('length', 0.1))
-                                            pw = float(placed_cargo.get('width', 0.1))
-                                            ph = float(placed_cargo.get('height', 0.1))
-                                            
-                                            if not (x + length <= placed_pos['x'] or placed_pos['x'] + pl <= x or
-                                                    y + width <= placed_pos['y'] or placed_pos['y'] + pw <= y or
-                                                    z + height <= placed_pos['z'] or placed_pos['z'] + ph <= z):
-                                                overlap = True
-                                                break
-                                        except (ValueError, TypeError):
-                                            continue
-                                    
-                                    if not overlap:
-                                        solution.append({'x': x, 'y': y, 'z': z})
-                                        placed_positions.append((cargo, {'x': x, 'y': y, 'z': z}))
-                                        placed = True
-                                        break
-                                if placed:
-                                    break
-                            if placed:
-                                break
-                        if placed:
-                            break
                     
-                    # 如果仍然找不到位置，随机放置
-                    if not placed:
+                    # 如果高度方向没有位置，尝试长度方向（x轴）
+                    if not found:
+                        for placed_cargo, placed_pos in placed_positions:
+                            try:
+                                pl = float(placed_cargo.get('length', 0.1))
+                                pw = float(placed_cargo.get('width', 0.1))
+                                ph = float(placed_cargo.get('height', 0.1))
+                                
+                                # 尝试在长度方向（后侧）放置
+                                x = placed_pos['x'] + pl
+                                y = placed_pos['y']
+                                z = placed_pos['z']
+                                if check_position(x, y, z):
+                                    best_position = {'x': x, 'y': y, 'z': z}
+                                    found = True
+                                    break
+                            except (ValueError, TypeError):
+                                continue
+                    
+                    # 3. 如果仍然找不到位置，使用网格搜索
+                    if not best_position:
+                        grid_size = 0.1
+                        for y in range(int(self.container_width / grid_size) + 1):
+                            y_pos = y * grid_size
+                            for z in range(int(self.container_height / grid_size) + 1):
+                                z_pos = z * grid_size
+                                for x in range(int(self.container_length / grid_size) + 1):
+                                    x_pos = x * grid_size
+                                    if check_position(x_pos, y_pos, z_pos):
+                                        best_position = {'x': x_pos, 'y': y_pos, 'z': z_pos}
+                                        found = True
+                                        break
+                                if found:
+                                    break
+                            if found:
+                                break
+                    
+                    # 4. 如果仍然找不到位置，随机放置
+                    if not best_position:
+                        # 随机生成位置
                         x = np.random.uniform(0, max(0.1, self.container_length - length))
                         y = np.random.uniform(0, max(0.1, self.container_width - width))
                         z = np.random.uniform(0, max(0.1, self.container_height - height))
-                        solution.append({'x': x, 'y': y, 'z': z})
+                        best_position = {'x': x, 'y': y, 'z': z}
+                
+                # 放置货物
+                solution.append(best_position)
+                placed_positions.append((cargo, best_position))
             
             # 恢复原始顺序
             original_order_solution = []

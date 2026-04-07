@@ -6,7 +6,7 @@ def generate_test_cargoes():
     """生成测试用的货物数据"""
     cargoes = []
     
-    # 大货
+    # 大货（单位：米）
     cargoes.append({
         'id': '1',
         'name': '大型设备',
@@ -25,7 +25,7 @@ def generate_test_cargoes():
         'is_fixed_combination': False
     })
     
-    # 中型货物
+    # 中型货物（单位：米）
     for i in range(2, 7):
         cargoes.append({
             'id': str(i),
@@ -45,7 +45,7 @@ def generate_test_cargoes():
             'is_fixed_combination': False
         })
     
-    # 小型货物
+    # 小型货物（单位：米）
     for i in range(7, 27):
         cargoes.append({
             'id': str(i),
@@ -65,7 +65,7 @@ def generate_test_cargoes():
             'is_fixed_combination': False
         })
     
-    # 不可承重货物
+    # 不可承重货物（单位：米）
     cargoes.append({
         'id': '27',
         'name': '易碎品',
@@ -84,7 +84,7 @@ def generate_test_cargoes():
         'is_fixed_combination': False
     })
     
-    # 破损货物
+    # 破损货物（单位：米）
     cargoes.append({
         'id': '28',
         'name': '破损货物',
@@ -121,8 +121,8 @@ def main():
         
         # 3. 执行装柜优化
         print("\n3. 执行装柜优化")
-        # 使用11.63m的集装箱尺寸
-        optimizer = ContainerLoadingOptimizer(11.63, 2.63, 2.67)  # 11.63m集装箱尺寸（米）
+        # 使用20英尺集装箱尺寸（米）
+        optimizer = ContainerLoadingOptimizer(5.898, 2.352, 2.393)  # 20英尺集装箱尺寸（米）
         optimized_plan = optimizer.optimize_loading(cargoes)
         
         if optimized_plan:
