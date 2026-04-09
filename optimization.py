@@ -95,7 +95,7 @@ class ContainerLoadingOptimizer:
     
     def _heuristic_loading(self, cargoes: List[Dict]) -> List[Dict]:
         """
-        启发式装柜算法
+        启发式装柜算法 - 从里往外填满，货物靠在一起
         """
         placed_cargoes = []
         placed_positions = []
@@ -151,19 +151,19 @@ class ContainerLoadingOptimizer:
                            placed_cargoes: List[Dict], placed_positions: List[Dict], 
                            placed_rotations: List[RotationType]) -> Tuple[Optional[Dict], float]:
         """
-        寻找最佳放置位置
+        寻找最佳放置位置 - 从里往外填满，优先宽度，再高度，最后长度
         """
         best_position = None
         best_score = -float('inf')
         
-        # 检查起点位置
+        # 检查起点位置（从里往外的起点）
         if self._check_position_valid(0, 0, 0, length, width, height, placed_cargoes, placed_positions, placed_rotations):
             score = self._calculate_position_score(0, 0, 0, length, width, height)
             if score > best_score:
                 best_position = {'x': 0, 'y': 0, 'z': 0}
                 best_score = score
         
-        # 从已放置货物周围寻找位置
+        # 从已放置货物周围寻找位置，按照优先顺序：宽度方向 > 高度方向 > 长度方向
         for i, (placed_cargo, placed_pos, placed_rot) in enumerate(zip(placed_cargoes, placed_positions, placed_rotations)):
             try:
                 pl = float(placed_cargo.get('length', 0.1))
@@ -173,7 +173,7 @@ class ContainerLoadingOptimizer:
                 # 考虑旋转后的尺寸
                 rotated_pl, rotated_pw, rotated_ph = self.get_rotated_dimensions(pl, pw, ph, placed_rot)
                 
-                # 宽度方向（右侧）- 优先
+                # 宽度方向（右侧）- 最高优先级
                 x, y, z = placed_pos['x'], placed_pos['y'] + rotated_pw, placed_pos['z']
                 if self._check_position_valid(x, y, z, length, width, height, placed_cargoes, placed_positions, placed_rotations):
                     score = self._calculate_position_score(x, y, z, length, width, height)
@@ -181,7 +181,7 @@ class ContainerLoadingOptimizer:
                         best_position = {'x': x, 'y': y, 'z': z}
                         best_score = score
                 
-                # 高度方向（上方）- 次之
+                # 高度方向（上方）- 次优先级
                 x, y, z = placed_pos['x'], placed_pos['y'], placed_pos['z'] + rotated_ph
                 if self._check_position_valid(x, y, z, length, width, height, placed_cargoes, placed_positions, placed_rotations):
                     score = self._calculate_position_score(x, y, z, length, width, height)
@@ -189,13 +189,32 @@ class ContainerLoadingOptimizer:
                         best_position = {'x': x, 'y': y, 'z': z}
                         best_score = score
                 
-                # 长度方向（后侧）- 最后
+                # 长度方向（后侧）- 最后优先级
                 x, y, z = placed_pos['x'] + rotated_pl, placed_pos['y'], placed_pos['z']
                 if self._check_position_valid(x, y, z, length, width, height, placed_cargoes, placed_positions, placed_rotations):
                     score = self._calculate_position_score(x, y, z, length, width, height)
                     if score > best_score:
                         best_position = {'x': x, 'y': y, 'z': z}
                         best_score = score
+                
+                # 检查宽度方向的其他可能位置（确保货物靠在一起）
+                for j, (other_cargo, other_pos, other_rot) in enumerate(zip(placed_cargoes, placed_positions, placed_rotations)):
+                    if i != j:
+                        try:
+                            opl = float(other_cargo.get('length', 0.1))
+                            opw = float(other_cargo.get('width', 0.1))
+                            oph = float(other_cargo.get('height', 0.1))
+                            rotated_opl, rotated_opw, rotated_oph = self.get_rotated_dimensions(opl, opw, oph, other_rot)
+                            
+                            # 检查与其他货物的宽度方向相邻位置
+                            x, y, z = other_pos['x'], other_pos['y'] + rotated_opw, other_pos['z']
+                            if self._check_position_valid(x, y, z, length, width, height, placed_cargoes, placed_positions, placed_rotations):
+                                score = self._calculate_position_score(x, y, z, length, width, height)
+                                if score > best_score:
+                                    best_position = {'x': x, 'y': y, 'z': z}
+                                    best_score = score
+                        except (ValueError, TypeError):
+                            continue
             except (ValueError, TypeError):
                 continue
         
@@ -238,22 +257,25 @@ class ContainerLoadingOptimizer:
     def _calculate_position_score(self, x: float, y: float, z: float,
                                   length: float, width: float, height: float) -> float:
         """
-        计算位置得分
+        计算位置得分 - 优先宽度，再高度，最后长度
         """
         score = 0
         
-        # 宽度方向得分（越靠近左侧越好）
-        score += (1 - y / self.container_width) * 3
+        # 宽度方向得分（越靠近左侧越好，优先级最高）
+        score += (1 - y / self.container_width) * 5
         
-        # 高度方向得分（越靠近底部越好）
-        score += (1 - z / self.container_height) * 2
+        # 高度方向得分（越靠近底部越好，优先级次之）
+        score += (1 - z / self.container_height) * 3
         
-        # 长度方向得分（越靠近前侧越好）
+        # 长度方向得分（越靠近前侧越好，优先级最低）
         score += (1 - x / self.container_length) * 1
         
         # 空间利用率得分
         available_space = self.container_length * self.container_width * self.container_height
         used_space = length * width * height
         score += (used_space / available_space) * 10
+        
+        # 靠近已放置货物的得分（确保货物靠在一起）
+        score += 2  # 基础得分
         
         return score
